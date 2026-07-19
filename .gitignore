@@ -1,0 +1,19 @@
+# app exports
+*.gcode
+lattice_path.json
+/exports/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editors
+.vscode/
+.idea/
+*.swp
+
+# in case a node tool ever appears (the app itself has no dependencies)
+node_modules/
+
+# local Claude Code instructions (kept out of the repo)
+CLAUDE.md

@@ -1,0 +1,837 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lattice DIW — generator G-code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0c1116; --panel:#141b22; --panel-2:#0f151b; --line:#243039;
+    --line-soft:#1b242c; --txt:#cdd8e0; --txt-dim:#7d8d99; --txt-faint:#566470;
+    --amber:#eaa24d; --amber-dim:#8a6533; --cyan:#54b6cc; --hot:#ef8f4a; --cold:#3f7fc4;
+    --ok:#6fbf8f; --radius:9px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--txt);
+    font-family:"Space Grotesk",system-ui,sans-serif; font-size:14px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+  .app{display:flex; flex-direction:column; height:100vh; min-height:100vh}
+  header{
+    display:flex; align-items:center; gap:14px; padding:12px 18px;
+    border-bottom:1px solid var(--line); background:var(--panel-2); flex:0 0 auto;
+  }
+  header .glyph{width:26px;height:26px;flex:0 0 auto}
+  header h1{font-size:15px; font-weight:600; margin:0; letter-spacing:.2px}
+  header .sub{font-size:12px; color:var(--txt-dim); margin-top:1px}
+  .chip{
+    margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:11px;
+    color:var(--amber); border:1px solid var(--amber-dim); border-radius:100px;
+    padding:3px 10px; letter-spacing:.4px;
+  }
+  .lang{display:flex; border:1px solid var(--line); border-radius:7px; overflow:hidden; flex:0 0 auto}
+  .lang button{
+    font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:500; letter-spacing:.6px;
+    background:var(--panel); color:var(--txt-faint); border:0; padding:4px 9px; cursor:pointer;
+    transition:background .12s, color .12s;
+  }
+  .lang button + button{border-left:1px solid var(--line)}
+  .lang button:hover{color:var(--txt)}
+  .lang button.on{background:var(--amber); color:#1a1206}
+
+  main{display:flex; flex:1 1 auto; min-height:0}
+  .panel{
+    width:318px; flex:0 0 auto; border-right:1px solid var(--line);
+    background:var(--panel); overflow-y:auto; padding:14px 16px 28px;
+  }
+  .panel h2{
+    font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.3px;
+    color:var(--txt-faint); margin:20px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line-soft);
+  }
+  .panel h2:first-child{margin-top:2px}
+  .ctrl{margin-bottom:13px}
+  .ctrl .row{display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:5px}
+  .ctrl label{font-size:12.5px; color:var(--txt)}
+  .ctrl .unit{font-size:11px; color:var(--txt-faint); font-family:"IBM Plex Mono",monospace}
+  .ctrl .num{
+    width:66px; text-align:right; background:var(--panel-2); color:var(--amber);
+    border:1px solid var(--line); border-radius:6px; padding:3px 7px;
+    font-family:"IBM Plex Mono",monospace; font-size:12.5px; font-weight:500;
+  }
+  .ctrl .num:focus{outline:none; border-color:var(--amber-dim)}
+  input[type=range]{
+    -webkit-appearance:none; appearance:none; width:100%; height:3px; border-radius:3px;
+    background:var(--line); cursor:pointer; margin:2px 0;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
+    background:var(--amber); border:2px solid var(--bg); cursor:pointer;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%; background:var(--amber);
+    border:2px solid var(--bg); cursor:pointer;
+  }
+  .toggle{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px}
+  .toggle .tl{font-size:12.5px}
+  .toggle .th{font-size:11px; color:var(--txt-faint); margin-top:2px}
+  .sw{position:relative; width:38px; height:21px; flex:0 0 auto}
+  .sw input{position:absolute; opacity:0; width:100%; height:100%; margin:0; cursor:pointer}
+  .sw .track{position:absolute; inset:0; background:var(--line); border-radius:100px; transition:background .15s}
+  .sw .knob{position:absolute; top:2px; left:2px; width:17px; height:17px; border-radius:50%; background:#8896a1; transition:transform .15s, background .15s}
+  .sw input:checked ~ .track{background:var(--amber-dim)}
+  .sw input:checked ~ .knob{transform:translateX(17px); background:var(--amber)}
+
+  .stage{flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0}
+
+  /* panel algorytmow (prawy) */
+  .panel-r{
+    width:252px; flex:0 0 auto; border-left:1px solid var(--line);
+    background:var(--panel); overflow-y:auto; padding:14px 16px 24px;
+  }
+  .panel-r h2{
+    font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.3px;
+    color:var(--txt-faint); margin:2px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line-soft);
+  }
+  .algo{
+    border:1px solid var(--line); border-radius:var(--radius); background:var(--panel-2);
+    padding:10px 11px; margin-bottom:9px; cursor:pointer; transition:border-color .12s, background .12s;
+  }
+  .algo:hover{border-color:var(--amber-dim)}
+  .algo.on{border-color:var(--amber); background:rgba(234,162,77,.07)}
+  .algo .hd{display:flex; align-items:center; gap:7px}
+  .algo .nm{font-family:"IBM Plex Mono",monospace; font-size:12.5px; font-weight:600; color:var(--txt); letter-spacing:.4px}
+  .algo.on .nm{color:var(--amber)}
+  .algo .dot{width:7px; height:7px; border-radius:50%; background:var(--line); flex:0 0 auto}
+  .algo.on .dot{background:var(--amber)}
+  .algo .badge{
+    margin-left:auto; font-size:9.5px; text-transform:uppercase; letter-spacing:.7px;
+    color:var(--txt-faint); border:1px solid var(--line); border-radius:100px; padding:1px 6px;
+  }
+  .algo.on .badge{color:var(--amber); border-color:var(--amber-dim)}
+  .algo .tg{font-size:11.5px; color:var(--txt-dim); margin-top:5px; line-height:1.45}
+  .algo .ds{font-size:11px; color:var(--txt-faint); margin-top:6px; line-height:1.5; display:none}
+  .algo.on .ds{display:block}
+  .algo-note{
+    font-size:10.5px; color:var(--txt-faint); line-height:1.5; margin-top:14px;
+    padding-top:11px; border-top:1px solid var(--line-soft);
+  }
+  /* przelacznik trybu w karcie */
+  .seg{display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; margin-top:10px}
+  .seg button{
+    flex:1; font-family:"IBM Plex Mono",monospace; font-size:10.5px; letter-spacing:.5px;
+    background:var(--panel); color:var(--txt-faint); border:0; padding:5px 0; cursor:pointer;
+    transition:background .12s, color .12s;
+  }
+  .seg button + button{border-left:1px solid var(--line)}
+  .seg button:hover{color:var(--txt)}
+  .seg button.on{background:var(--amber); color:#1a1206; font-weight:600}
+  .seg-hint{font-size:10.5px; color:var(--txt-faint); margin-top:6px; line-height:1.45}
+  .opts{margin-top:11px; padding-top:10px; border-top:1px solid var(--line-soft)}
+  .opts .ctrl{margin-bottom:10px}
+  .opts .ctrl:last-child{margin-bottom:2px}
+  .opts label{font-size:11.5px}
+  .viewport{position:relative; flex:1 1 auto; min-height:300px; background:#0a0e12}
+  #gl{display:block; width:100%; height:100%}
+  .hud{position:absolute; top:12px; left:14px; display:flex; gap:8px; flex-wrap:wrap; pointer-events:none}
+  .stat{background:rgba(15,21,27,.82); border:1px solid var(--line); border-radius:7px; padding:6px 10px; backdrop-filter:blur(3px)}
+  .stat .k{font-size:10px; text-transform:uppercase; letter-spacing:.8px; color:var(--txt-faint)}
+  .stat .v{font-family:"IBM Plex Mono",monospace; font-size:14px; font-weight:500; color:var(--txt); margin-top:1px}
+  .stat .v small{color:var(--txt-dim); font-size:11px; font-weight:400}
+  .legend{position:absolute; bottom:12px; left:14px; display:flex; align-items:center; gap:8px; background:rgba(15,21,27,.82); border:1px solid var(--line); border-radius:7px; padding:6px 10px; pointer-events:none}
+  .legend .bar{width:80px; height:7px; border-radius:4px; background:linear-gradient(90deg,#3f7fc4,#54b6cc,#eaa24d,#ef8f4a)}
+  .legend span{font-size:10.5px; color:var(--txt-dim); font-family:"IBM Plex Mono",monospace}
+  .hint{position:absolute; bottom:12px; right:14px; font-size:11px; color:var(--txt-faint); pointer-events:none; font-family:"IBM Plex Mono",monospace}
+
+  /* pasek symulacji */
+  .simbar{
+    flex:0 0 auto; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    padding:9px 14px; border-top:1px solid var(--line); background:var(--panel);
+  }
+  .simbar .play{
+    display:inline-flex; align-items:center; gap:7px; font-family:"Space Grotesk",sans-serif;
+    font-size:12.5px; font-weight:500; background:var(--amber); color:#1a1206;
+    border:1px solid var(--amber); border-radius:7px; padding:6px 14px; cursor:pointer; min-width:130px; justify-content:center;
+  }
+  .simbar .play:hover{background:#f2ad5b}
+  .simbar .mini{
+    background:var(--panel-2); color:var(--txt); border:1px solid var(--line); border-radius:7px;
+    padding:6px 10px; cursor:pointer; font-size:13px;
+  }
+  .simbar .mini:hover{border-color:var(--amber-dim); color:var(--amber)}
+  .simbar select{
+    background:var(--panel-2); color:var(--txt); border:1px solid var(--line); border-radius:7px;
+    padding:5px 8px; font-family:"IBM Plex Mono",monospace; font-size:12px; cursor:pointer;
+  }
+  .simbar .scrub{flex:1 1 180px; min-width:140px}
+  .simbar .read{
+    font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--txt-dim);
+    white-space:nowrap; display:flex; gap:12px; flex-wrap:wrap;
+  }
+  .simbar .read b{color:var(--amber); font-weight:500}
+
+  .drawer{flex:0 0 auto; height:186px; border-top:1px solid var(--line); background:var(--panel-2); display:flex; flex-direction:column}
+  .drawer .bar{display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--line-soft)}
+  .drawer .bar .t{font-size:11px; text-transform:uppercase; letter-spacing:1.2px; color:var(--txt-faint)}
+  .drawer .bar .meta{font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--txt-dim)}
+  .drawer .bar .sp{flex:1}
+  .btn{
+    font-family:"Space Grotesk",sans-serif; font-size:12.5px; font-weight:500;
+    border:1px solid var(--line); background:var(--panel); color:var(--txt);
+    border-radius:7px; padding:5px 13px; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+    transition:border-color .12s, color .12s;
+  }
+  .btn:hover{border-color:var(--amber-dim); color:var(--amber)}
+  .btn.primary{background:var(--amber); color:#1a1206; border-color:var(--amber)}
+  .btn.primary:hover{background:#f2ad5b; color:#1a1206}
+  .code{flex:1; overflow:auto; margin:0; padding:10px 14px; font-family:"IBM Plex Mono",monospace; font-size:12px; line-height:1.55; color:#aeb9c2; white-space:pre; tab-size:2}
+  .code .cm{color:var(--txt-faint)}
+  .code .g0{color:var(--cyan)}
+  .code .ee{color:var(--amber)}
+
+  @media (max-width:820px){
+    main{flex-direction:column; overflow:auto}
+    .panel{width:100%; border-right:none; border-bottom:1px solid var(--line)}
+    .panel-r{width:100%; border-left:none; border-top:1px solid var(--line)}
+    .stage{min-height:640px}
+    .viewport{min-height:320px}
+  }
+</style>
+
+<div class="app">
+  <header>
+    <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="#eaa24d" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M3 17 L7 9 L11 17 L15 9 L19 17"/>
+      <path d="M3 12 L7 5 L11 12 L15 5 L19 12" opacity=".45"/>
+    </svg>
+    <div>
+      <h1 data-i18n="h1">Lattice DIW — G-code generator</h1>
+      <div class="sub" data-i18n="sub">Continuous single-line path · syringe silicone in gel</div>
+    </div>
+    <div class="chip">MARLIN · ENDER 3</div>
+    <div class="lang" id="lang">
+      <button data-lang="en" class="on">EN</button><button data-lang="pl">PL</button>
+    </div>
+  </header>
+
+  <main>
+    <aside class="panel" id="panel">
+      <h2 data-i18n="h_geo">Cell geometry</h2>
+      <div id="geo"></div>
+      <h2 data-i18n="h_grid">Grid dimensions</h2>
+      <div id="grid"></div>
+      <h2 data-i18n="h_layers">Layers</h2>
+      <div id="layers"></div>
+      <div class="toggle">
+        <div><div class="tl" data-i18n="t_wood">Woodpile (90° rotation)</div><div class="th" data-i18n="t_wood_h">Crossing layers = 3D lattice</div></div>
+        <label class="sw"><input type="checkbox" id="woodpile" checked><span class="track"></span><span class="knob"></span></label>
+      </div>
+      <h2 data-i18n="h_flow">Extrusion and speeds</h2>
+      <div id="flow"></div>
+      <div class="toggle">
+        <div><div class="tl">Linear Advance (M900)</div><div class="th" data-i18n="t_la_h">Syringe compliance compensation</div></div>
+        <label class="sw"><input type="checkbox" id="m900on"><span class="track"></span><span class="knob"></span></label>
+      </div>
+      <div id="m900wrap" style="display:none"></div>
+    </aside>
+
+    <section class="stage">
+      <div class="viewport">
+        <canvas id="gl"></canvas>
+        <div class="hud">
+          <div class="stat"><div class="k" data-i18n="s_moves">G1 moves</div><div class="v" id="s-moves">—</div></div>
+          <div class="stat"><div class="k" data-i18n="s_len">Path length</div><div class="v" id="s-len">—</div></div>
+          <div class="stat"><div class="k" data-i18n="s_e">Plunger (E)</div><div class="v" id="s-e">—</div></div>
+          <div class="stat"><div class="k" data-i18n="s_time">Print time</div><div class="v" id="s-time">—</div></div>
+        </div>
+        <div class="legend"><span data-i18n="lg_low">Z low</span><div class="bar"></div><span data-i18n="lg_high">high</span></div>
+        <div class="hint" data-i18n="hint">drag = rotate · scroll = zoom</div>
+      </div>
+
+      <div class="simbar">
+        <button class="play" id="play">▶ Simulate print</button>
+        <button class="mini" id="reset" data-i18n-title="ttl_reset" title="From start">⟲</button>
+        <select id="speed" data-i18n-title="ttl_speed" title="Simulation speed">
+          <option value="1">1×</option>
+          <option value="4">4×</option>
+          <option value="20" selected>20×</option>
+          <option value="100">100×</option>
+          <option value="500">500×</option>
+        </select>
+        <input class="scrub" id="scrub" type="range" min="0" max="1000" value="1000">
+        <div class="read">
+          <span><span data-i18n="r_layer">layer</span> <b id="r-layer">–</b></span>
+          <span><b id="r-time">0s</b> / <span id="r-total">0s</span></span>
+          <span><b id="r-pct">100%</b></span>
+          <span id="r-xyz">—</span>
+        </div>
+      </div>
+
+      <div class="drawer">
+        <div class="bar">
+          <span class="t">G-code</span>
+          <span class="meta" id="d-meta">—</span>
+          <span class="sp"></span>
+          <button class="btn" id="copy" data-i18n="b_copy">Copy</button>
+          <button class="btn" id="json" data-i18n="b_json">Download .json</button>
+          <button class="btn primary" id="download" data-i18n="b_gcode">Download .gcode</button>
+        </div>
+        <pre class="code" id="code"></pre>
+      </div>
+    </section>
+
+    <aside class="panel-r">
+      <h2 data-i18n="h_algo">Lattice algorithms</h2>
+      <div id="algos"></div>
+      <div class="algo-note" data-i18n="algo_note">The algorithm defines the path topology. Parameters on the left apply to the selected algorithm.</div>
+    </aside>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // ---------- i18n ----------
+  const I18N = {
+    en:{
+      title:"Lattice DIW — G-code generator",
+      h1:"Lattice DIW — G-code generator",
+      sub:"Continuous single-line path · syringe silicone in gel",
+      h_geo:"Cell geometry", h_grid:"Grid dimensions", h_layers:"Layers", h_flow:"Extrusion and speeds",
+      t_wood:"Woodpile (90° rotation)", t_wood_h:"Crossing layers = 3D lattice",
+      t_la_h:"Syringe compliance compensation",
+      s_moves:"G1 moves", s_len:"Path length", s_e:"Plunger (E)", s_time:"Print time",
+      lg_low:"Z low", lg_high:"high", hint:"drag = rotate · scroll = zoom",
+      r_layer:"layer", ttl_reset:"From start", ttl_speed:"Simulation speed",
+      b_copy:"Copy", b_json:"Download .json", b_gcode:"Download .gcode",
+      copied:"Copied", copy_err:"Copy failed", saved:"Saved",
+      play:"▶ Simulate print", pause:"⏸ Pause", replay:"⟲ Replay",
+      c_pitch:"Pitch (X and Y)", c_zamp:"Z amplitude",
+      c_xmax:"X extent", c_ymax:"Y extent", c_z0:"Z base (offset from bottom)",
+      c_layers:"Number of layers", c_eper:"E per mm of path",
+      c_fprint:"Print speed", c_ftravel:"Travel speed", c_k:"K (pressure advance)",
+      meta:(l,ly)=>l+" lines · "+ly+" layers",
+      more:(n)=>"; … +"+n+" more lines (full file in export)",
+      gc_head:"; ---- continuous lattice (triangle-wave woodpile) ----",
+      gc_mm:"; mm", gc_abs:"; XYZ absolute", gc_rel:"; RELATIVE extruder (uniform flow)",
+      gc_la:"; Linear Advance / pressure advance", gc_end:"; end",
+      h_algo:"Lattice algorithms", algo_active:"active", algo_select:"select",
+      algo_note:"The algorithm defines the path topology. Parameters on the left apply to the selected algorithm.",
+      sako_tag:"Continuous triangle wave, serpentine, interlocking layers.",
+      sako_desc:"One unbroken line: the needle zig-zags in Z on every pitch step, snakes along X, and each next layer descends onto the peaks of the one below (rotated 90° in woodpile mode). No retractions, no travel moves.",
+      mode_classic:"Classic", mode_rounded:"Rounded",
+      c_rstr:"Rounding strength", c_rseg:"Segments per span",
+      mode_hint_classic:"Sharp triangle wave — straight segments.",
+      mode_hint_rounded:"Spline through the same nodes — gyroid-like wave."
+    },
+    pl:{
+      title:"Lattice DIW — generator G-code",
+      h1:"Lattice DIW — generator G-code",
+      sub:"Ciągła jednolinijkowa ścieżka · sylikon ze strzykawki w żelu",
+      h_geo:"Geometria komórki", h_grid:"Wymiary siatki", h_layers:"Warstwy", h_flow:"Ekstruzja i prędkości",
+      t_wood:"Woodpile (obrót 90°)", t_wood_h:"Krzyżowanie warstw = lattice 3D",
+      t_la_h:"Kompensacja podatności strzykawki",
+      s_moves:"Ruchy G1", s_len:"Długość ścieżki", s_e:"Tłok (E)", s_time:"Czas druku",
+      lg_low:"Z niska", lg_high:"wysoka", hint:"przeciągnij = obrót · scroll = zoom",
+      r_layer:"warstwa", ttl_reset:"Od początku", ttl_speed:"Prędkość symulacji",
+      b_copy:"Kopiuj", b_json:"Pobierz .json", b_gcode:"Pobierz .gcode",
+      copied:"Skopiowano", copy_err:"Błąd kopiowania", saved:"Zapisano",
+      play:"▶ Symuluj druk", pause:"⏸ Pauza", replay:"⟲ Odtwórz od nowa",
+      c_pitch:"Skok (X i Y)", c_zamp:"Amplituda Z",
+      c_xmax:"Zasięg X", c_ymax:"Zasięg Y", c_z0:"Baza Z (odsunięcie od dna)",
+      c_layers:"Liczba warstw", c_eper:"E na mm ścieżki",
+      c_fprint:"Prędkość druku", c_ftravel:"Prędkość dojazdu", c_k:"K (pressure advance)",
+      meta:(l,ly)=>l+" linii · "+ly+" warstw",
+      more:(n)=>"; … +"+n+" linii (pełny plik w eksporcie)",
+      gc_head:"; ---- ciagly lattice (triangle-wave woodpile) ----",
+      gc_mm:"; mm", gc_abs:"; XYZ absolutne", gc_rel:"; ekstruder WZGLEDNY (jednolity flow)",
+      gc_la:"; Linear Advance / pressure advance", gc_end:"; koniec",
+      h_algo:"Algorytmy lattice", algo_active:"aktywny", algo_select:"wybierz",
+      algo_note:"Algorytm definiuje topologię ścieżki. Parametry po lewej działają na wybrany algorytm.",
+      sako_tag:"Ciągła fala trójkątna, serpentyna, zazębiające się warstwy.",
+      sako_desc:"Jedna nieprzerwana linia: igła robi zygzak w Z na każdym skoku, wije się serpentyną po X, a każda kolejna warstwa schodzi na wierzchołki poprzedniej (obrót 90° w trybie woodpile). Bez retrakcji i dojazdów.",
+      mode_classic:"Classic", mode_rounded:"Rounded",
+      c_rstr:"Siła zaokrąglenia", c_rseg:"Segmentów na odcinek",
+      mode_hint_classic:"Ostra fala trójkątna — proste odcinki.",
+      mode_hint_rounded:"Splajn przez te same węzły — fala jak gyroid."
+    }
+  };
+  let LANG = 'en';
+  const T = (k)=> I18N[LANG][k];
+
+  const P = {
+    pitch:10, z_amp:10, x_max:100, y_max:100, layers:6, z0:0.2,
+    feed_print:600, feed_travel:1500, e_per_mm:0.05, m900_k:0.8,
+    woodpile:true, m900on:false,
+    mode:'classic', r_str:1, r_seg:8
+  };
+  const CTRL = {
+    geo:[
+      {k:'pitch',   t:'c_pitch', min:2,  max:30,  step:0.5, unit:'mm'},
+      {k:'z_amp',   t:'c_zamp',  min:2,  max:30,  step:0.5, unit:'mm'},
+    ],
+    grid:[
+      {k:'x_max',   t:'c_xmax', min:20, max:220, step:5, unit:'mm'},
+      {k:'y_max',   t:'c_ymax', min:20, max:220, step:5, unit:'mm'},
+      {k:'z0',      t:'c_z0',   min:0, max:5, step:0.1, unit:'mm'},
+    ],
+    layers:[ {k:'layers', t:'c_layers', min:1, max:40, step:1, unit:''} ],
+    flow:[
+      {k:'e_per_mm',   t:'c_eper',    min:0, max:0.4, step:0.005, unit:'mm/mm'},
+      {k:'feed_print', t:'c_fprint',  min:60, max:3000, step:10, unit:'mm/min'},
+      {k:'feed_travel',t:'c_ftravel', min:300, max:6000, step:50, unit:'mm/min'},
+    ],
+    m900:[ {k:'m900_k', t:'c_k', min:0, max:2, step:0.05, unit:''} ],
+    round:[
+      {k:'r_str', t:'c_rstr', min:0, max:1,  step:0.05, unit:''},
+      {k:'r_seg', t:'c_rseg', min:2, max:24, step:1,    unit:''},
+    ],
+  };
+
+  const labelEls=[]; // {el, key} — control labels to retranslate
+
+  function clamp(v,a,b){return Math.min(b,Math.max(a,v));}
+  function buildControls(containerId, list, register){
+    if(register===undefined) register=true;
+    const host=document.getElementById(containerId);
+    list.forEach(c=>{
+      const wrap=document.createElement('div'); wrap.className='ctrl';
+      wrap.innerHTML =
+        '<div class="row"><label>'+T(c.t)+'</label>'+
+        '<div style="display:flex;align-items:center;gap:6px">'+
+        '<input class="num" type="number" min="'+c.min+'" max="'+c.max+'" step="'+c.step+'" value="'+P[c.k]+'" data-k="'+c.k+'">'+
+        (c.unit?'<span class="unit">'+c.unit+'</span>':'')+'</div></div>'+
+        '<input type="range" min="'+c.min+'" max="'+c.max+'" step="'+c.step+'" value="'+P[c.k]+'" data-k="'+c.k+'">';
+      host.appendChild(wrap);
+      if(register) labelEls.push({el:wrap.querySelector('label'), key:c.t});
+      const num=wrap.querySelector('.num'), rng=wrap.querySelector('input[type=range]');
+      const sync=(v)=>{ v=clamp(parseFloat(v),c.min,c.max); if(isNaN(v))v=P[c.k]; P[c.k]=v; num.value=v; rng.value=v; schedule(); };
+      num.addEventListener('input',()=>sync(num.value));
+      rng.addEventListener('input',()=>sync(rng.value));
+    });
+  }
+  buildControls('geo',CTRL.geo);
+  buildControls('grid',CTRL.grid);
+  buildControls('layers',CTRL.layers);
+  buildControls('flow',CTRL.flow);
+  buildControls('m900wrap',CTRL.m900);
+  document.getElementById('woodpile').addEventListener('change',e=>{P.woodpile=e.target.checked; schedule();});
+  document.getElementById('m900on').addEventListener('change',e=>{
+    P.m900on=e.target.checked;
+    document.getElementById('m900wrap').style.display=e.target.checked?'block':'none';
+    schedule();
+  });
+
+  function dist(a,b){const dx=a[0]-b[0],dy=a[1]-b[1],dz=a[2]-b[2];return Math.sqrt(dx*dx+dy*dy+dz*dz);}
+
+  // ---- smoothing: centripetal Catmull-Rom (alpha=0.5).
+  // The curve passes EXACTLY through the input points -> lattice nodes stay untouched.
+  // Centripetal parameterization creates no loops or overshoots at sharp turnarounds.
+  function crPoint(p0,p1,p2,p3,u){
+    const A=0.5, EPS=1e-6;
+    const tj=(ti,a,b)=>ti+Math.max(Math.pow(dist(a,b),A),EPS);
+    const t0=0, t1=tj(t0,p0,p1), t2=tj(t1,p1,p2), t3=tj(t2,p2,p3);
+    const t=t1+(t2-t1)*u;
+    const lp=(a,b,ta,tb)=>{
+      const f=(tb-ta)<EPS?0:(t-ta)/(tb-ta);
+      return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f];
+    };
+    const A1=lp(p0,p1,t0,t1), A2=lp(p1,p2,t1,t2), A3=lp(p2,p3,t2,t3);
+    const B1=lp(A1,A2,t0,t2), B2=lp(A2,A3,t1,t3);
+    return lp(B1,B2,t1,t2);
+  }
+  function smoothPath(pts,lay,strength,segs){
+    const n=pts.length;
+    if(n<3 || segs<2) return {path:pts, layerOf:lay};
+    const ext=(i)=>{ // extrapolate past the ends so the first/last segment is smooth too
+      if(i<0)    return [2*pts[0][0]-pts[1][0], 2*pts[0][1]-pts[1][1], 2*pts[0][2]-pts[1][2]];
+      if(i>n-1)  return [2*pts[n-1][0]-pts[n-2][0], 2*pts[n-1][1]-pts[n-2][1], 2*pts[n-1][2]-pts[n-2][2]];
+      return pts[i];
+    };
+    const out=[pts[0].slice()], outL=[lay[0]];
+    for(let i=0;i<n-1;i++){
+      const p0=ext(i-1), p1=ext(i), p2=ext(i+1), p3=ext(i+2);
+      for(let s=1;s<=segs;s++){
+        const u=s/segs;
+        const sp=crPoint(p0,p1,p2,p3,u);
+        // blend with the straight line: strength=0 -> exactly classic, 1 -> full sinusoid
+        const q=[0,0,0];
+        for(let d=0;d<3;d++){
+          const lin=p1[d]+(p2[d]-p1[d])*u;
+          q[d]=lin+(sp[d]-lin)*strength;
+        }
+        out.push(q); outL.push(lay[Math.min(i+1,n-1)]);
+      }
+    }
+    return {path:out, layerOf:outL};
+  }
+
+  // ================= LATTICE ALGORITHM REGISTRY =================
+  // Each algorithm: { id, tag, desc, build(P) -> {path, layerOf} }
+  // The path is a list of [x,y,z] points; layerOf[i] = layer number of point i.
+  const ALGOS = {
+
+    // ---- SAKO: continuous triangle wave, serpentine, layers interlocking at the peaks
+    sako:{
+      id:'sako',
+      build:function(P){
+        function layerPoints(o,zb,L){
+          const pts=[];
+          const nMain=Math.round((o==='Y'?P.x_max:P.y_max)/P.pitch);
+          const nSub =Math.round((o==='Y'?P.y_max:P.x_max)/P.pitch);
+          for(let mi=0;mi<=nMain;mi++){
+            const seq=[]; for(let s=0;s<=nSub;s++) seq.push(s);
+            if(mi%2===1) seq.reverse();
+            for(const si of seq){
+              const high=((mi+si+L)%2===1); const zig=high?P.z_amp:0; let x,y;
+              if(o==='Y'){x=mi*P.pitch;y=si*P.pitch;}else{x=si*P.pitch;y=mi*P.pitch;}
+              pts.push([x,y,zb+zig]);
+            }
+          }
+          return pts;
+        }
+        const path=[], layerOf=[]; let prev=null;
+        for(let L=0;L<P.layers;L++){
+          const o=P.woodpile?(L%2===0?'Y':'X'):'Y';
+          const zb=P.z0+L*P.z_amp;
+          let pts=layerPoints(o,zb,L);
+          if(prev){
+            if(dist(prev,pts[pts.length-1])<dist(prev,pts[0])) pts.reverse();
+            while(pts.length>2 && pts[0][2]>zb+P.z_amp*0.5) pts.shift(); // slide down a slope onto a peak
+            if(dist(prev,pts[0])<1e-6) pts.shift();                      // drop the duplicated node at the seam
+          }
+          for(const pt of pts){ path.push(pt); layerOf.push(L); }
+          prev=path[path.length-1];
+        }
+        return (P.mode==='rounded') ? smoothPath(path,layerOf,P.r_str,Math.round(P.r_seg)) : {path,layerOf};
+      }
+    }
+
+  };
+  const ALGO_ORDER=['sako'];
+  let ALGO='sako';
+
+  function buildPath(){ return ALGOS[ALGO].build(P); }
+
+  function f(v){return (Math.round(v*1000)/1000).toFixed(3);}
+  function buildGcode(path){
+    const L=[];
+    L.push(T('gc_head'));
+    L.push('; algorithm: '+ALGO.toUpperCase()+' / '+P.mode+(P.mode==='rounded'?' (strength='+P.r_str+', segments='+Math.round(P.r_seg)+')':''));
+    L.push('; pitch='+P.pitch+' z_amp='+P.z_amp+' x_max='+P.x_max+' y_max='+P.y_max+' layers='+P.layers+(P.woodpile?' woodpile':' plain'));
+    L.push('G21          '+T('gc_mm'));
+    L.push('G90          '+T('gc_abs'));
+    L.push('M83          '+T('gc_rel'));
+    if(P.m900on) L.push('M900 K'+P.m900_k+'   '+T('gc_la'));
+    L.push('G92 E0');
+    const p0=path[0];
+    L.push('G0 X'+f(p0[0])+' Y'+f(p0[1])+' Z'+f(p0[2])+' F'+P.feed_travel);
+    L.push('G1 F'+P.feed_print);
+    let prev=p0, totalLen=0;
+    for(let i=1;i<path.length;i++){
+      const p=path[i]; const d=dist(prev,p); totalLen+=d;
+      L.push('G1 X'+f(p[0])+' Y'+f(p[1])+' Z'+f(p[2])+' E'+(P.e_per_mm*d).toFixed(4));
+      prev=p;
+    }
+    L.push(T('gc_end'));
+    return {text:L.join('\n')+'\n', totalLen:totalLen, moves:path.length-1};
+  }
+  function fmtTime(s){s=Math.max(0,s);const m=Math.floor(s/60),ss=Math.round(s%60);return m>0?(m+'m '+ss+'s'):(ss+'s');}
+
+  // ---------- Three ----------
+  const canvas=document.getElementById('gl');
+  const renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:false});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0a0e12);
+  const camera=new THREE.PerspectiveCamera(45,1,0.1,4000);
+
+  const orbit={radius:260,theta:-0.75,phi:1.02,target:new THREE.Vector3(),tRadius:260,tTheta:-0.75,tPhi:1.02};
+  function applyCam(){
+    orbit.theta+=(orbit.tTheta-orbit.theta)*(RM?1:0.18);
+    orbit.phi  +=(orbit.tPhi-orbit.phi)*(RM?1:0.18);
+    orbit.radius+=(orbit.tRadius-orbit.radius)*(RM?1:0.18);
+    const ph=clamp(orbit.phi,0.15,Math.PI-0.15);
+    camera.position.set(
+      orbit.target.x+orbit.radius*Math.sin(ph)*Math.cos(orbit.theta),
+      orbit.target.y+orbit.radius*Math.cos(ph),
+      orbit.target.z+orbit.radius*Math.sin(ph)*Math.sin(orbit.theta));
+    camera.up.set(0,1,0); camera.lookAt(orbit.target);
+  }
+  let dragging=false,lx=0,ly=0;
+  canvas.addEventListener('pointerdown',e=>{dragging=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointerup',()=>{dragging=false;});
+  canvas.addEventListener('pointermove',e=>{
+    if(!dragging)return;
+    orbit.tTheta-=(e.clientX-lx)*0.008; orbit.tPhi-=(e.clientY-ly)*0.008;
+    orbit.tPhi=clamp(orbit.tPhi,0.15,Math.PI-0.15); lx=e.clientX; ly=e.clientY;
+  });
+  canvas.addEventListener('wheel',e=>{e.preventDefault();orbit.tRadius=clamp(orbit.tRadius*(1+Math.sign(e.deltaY)*0.12),40,2000);},{passive:false});
+
+  const colCold=new THREE.Color(0x3f7fc4),colMid=new THREE.Color(0x54b6cc),colHot=new THREE.Color(0xef8f4a);
+  function zColor(t){const c=new THREE.Color();if(t<0.5)c.copy(colCold).lerp(colMid,t/0.5);else c.copy(colMid).lerp(colHot,(t-0.5)/0.5);return c;}
+
+  // simulation state
+  const SIM={path:[],layerOf:[],cum:[],total:0,time:0,playing:false,speed:20,
+             posMaster:null,posPrinted:null,cx:0,cy:0,cz:0,
+             ghost:null,printed:null,nozzle:null,grid:null};
+
+  function disposeObj(o){ if(!o)return; scene.remove(o); o.traverse&&o.traverse(n=>{if(n.geometry)n.geometry.dispose();if(n.material)n.material.dispose();}); if(o.geometry)o.geometry.dispose(); if(o.material)o.material.dispose(); }
+
+  function buildScene(path,layerOf){
+    disposeObj(SIM.ghost); disposeObj(SIM.printed); disposeObj(SIM.nozzle); disposeObj(SIM.grid);
+
+    let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9,minZ=1e9,maxZ=-1e9;
+    for(const p of path){minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);minZ=Math.min(minZ,p[2]);maxZ=Math.max(maxZ,p[2]);}
+    const cx=(minX+maxX)/2,cy=(minY+maxY)/2,cz=(minZ+maxZ)/2;
+    const span=Math.max(maxX-minX,maxY-minY,maxZ-minZ,20);
+    SIM.cx=cx; SIM.cy=cy; SIM.cz=cz;
+
+    const n=path.length;
+    const master=new Float32Array(n*3), colors=new Float32Array(n*3);
+    const zr=Math.max(maxZ-minZ,0.001);
+    for(let i=0;i<n;i++){
+      const p=path[i];
+      master[i*3]=p[0]-cx; master[i*3+1]=p[2]-cz; master[i*3+2]=-(p[1]-cy);
+      const c=zColor((p[2]-minZ)/zr); colors[i*3]=c.r; colors[i*3+1]=c.g; colors[i*3+2]=c.b;
+    }
+    const posAttr=new THREE.BufferAttribute(master,3);
+
+    const gGhost=new THREE.BufferGeometry(); gGhost.setAttribute('position',posAttr);
+    SIM.ghost=new THREE.Line(gGhost,new THREE.LineBasicMaterial({color:0x2c3b46,transparent:true,opacity:0.28}));
+    scene.add(SIM.ghost);
+
+    const printedArr=master.slice(0);
+    SIM.posMaster=master; SIM.posPrinted=printedArr;
+    const gPrint=new THREE.BufferGeometry();
+    gPrint.setAttribute('position',new THREE.BufferAttribute(printedArr,3));
+    gPrint.setAttribute('color',new THREE.BufferAttribute(colors,3));
+    gPrint.setDrawRange(0,n);
+    SIM.printed=new THREE.Line(gPrint,new THREE.LineBasicMaterial({vertexColors:true}));
+    scene.add(SIM.printed);
+
+    // nozzle
+    const h=span*0.06+3;
+    const nz=new THREE.Group();
+    const cone=new THREE.Mesh(new THREE.ConeGeometry(h*0.26,h,18),new THREE.MeshBasicMaterial({color:0xe9a24d}));
+    cone.rotation.x=Math.PI; cone.position.y=h/2;
+    const tip=new THREE.Mesh(new THREE.SphereGeometry(h*0.16,14,14),new THREE.MeshBasicMaterial({color:0xffe0ad}));
+    nz.add(cone); nz.add(tip); SIM.nozzle=nz; scene.add(nz);
+
+    // bed grid
+    const gsize=Math.max(P.x_max,P.y_max);
+    const div=Math.max(2,Math.round(gsize/P.pitch));
+    const grid=new THREE.GridHelper(gsize,div,0x2a3742,0x1c262e);
+    grid.position.set(0,-cz,0);
+    SIM.grid=grid; scene.add(grid);
+
+    orbit.target.set(0,0,0);
+    orbit.tRadius=span*2.1; if(orbit.radius<1)orbit.radius=orbit.tRadius;
+  }
+
+  function computeTiming(path){
+    const n=path.length; const cum=new Float32Array(n); cum[0]=0;
+    const spd=Math.max(P.feed_print/60,0.001);
+    for(let i=1;i<n;i++) cum[i]=cum[i-1]+dist(path[i-1],path[i])/spd;
+    SIM.cum=cum; SIM.total=cum[n-1];
+  }
+
+  function updateSim(){
+    const n=SIM.path.length; if(n<2)return;
+    const cum=SIM.cum; let t=clamp(SIM.time,0,SIM.total);
+    let lo=0,hi=n-1;
+    while(lo<hi){const mid=(lo+hi+1)>>1; if(cum[mid]<=t)lo=mid; else hi=mid-1;}
+    let i=Math.min(lo,n-2);
+    const segT=cum[i+1]-cum[i];
+    const frac=segT>1e-9?(t-cum[i])/segT:1;
+    const a=SIM.path[i],b=SIM.path[i+1];
+    const px=a[0]+(b[0]-a[0])*frac, py=a[1]+(b[1]-a[1])*frac, pz=a[2]+(b[2]-a[2])*frac;
+    const tx=px-SIM.cx, ty=pz-SIM.cz, tz=-(py-SIM.cy);
+
+    SIM.posPrinted.set(SIM.posMaster);
+    SIM.posPrinted[(i+1)*3]=tx; SIM.posPrinted[(i+1)*3+1]=ty; SIM.posPrinted[(i+1)*3+2]=tz;
+    SIM.printed.geometry.setDrawRange(0,i+2);
+    SIM.printed.geometry.attributes.position.needsUpdate=true;
+    SIM.nozzle.position.set(tx,ty,tz);
+
+    document.getElementById('r-layer').textContent=(SIM.layerOf[i]+1)+'/'+P.layers;
+    document.getElementById('r-time').textContent=fmtTime(t);
+    document.getElementById('r-pct').textContent=Math.round(SIM.total>0?t/SIM.total*100:100)+'%';
+    document.getElementById('r-xyz').textContent='X'+px.toFixed(0)+' Y'+py.toFixed(0)+' Z'+pz.toFixed(1);
+    if(!scrubbing) document.getElementById('scrub').value=SIM.total>0?Math.round(t/SIM.total*1000):1000;
+  }
+
+  function resize(){const w=canvas.clientWidth,h=canvas.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+  window.addEventListener('resize',resize);
+
+  let lastT=performance.now();
+  function loop(){
+    const now=performance.now(); let dt=(now-lastT)/1000; lastT=now; if(dt>0.1)dt=0.1;
+    if(SIM.playing){
+      SIM.time+=dt*SIM.speed;
+      if(SIM.time>=SIM.total){SIM.time=SIM.total;SIM.playing=false;setPlayLabel();}
+    }
+    applyCam(); resize(); updateSim(); renderer.render(scene,camera);
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- G-code panel ----------
+  let lastGcode='';
+  function highlight(text){
+    const all=text.split('\n'); const lines=all.slice(0,240);
+    const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    const out=lines.map(l=>{
+      if(l.startsWith(';')) return '<span class="cm">'+esc(l)+'</span>';
+      let h=esc(l);
+      h=h.replace(/^(G0)\b/,'<span class="g0">$1</span>');
+      h=h.replace(/(E-?[0-9.]+)/,'<span class="ee">$1</span>');
+      return h;
+    }).join('\n');
+    const more=all.length-lines.length;
+    return out+(more>0?'\n<span class="cm">'+T('more')(more)+'</span>':'');
+  }
+
+  let scrubbing=false;
+  function setPlayLabel(){
+    const b=document.getElementById('play');
+    b.textContent=SIM.playing?T('pause'):(SIM.time>=SIM.total-1e-6?T('replay'):T('play'));
+  }
+
+  function regenerate(){
+    const r=buildPath();
+    const g=buildGcode(r.path);
+    lastGcode=g.text;
+    SIM.path=r.path; SIM.layerOf=r.layerOf;
+    buildScene(r.path,r.layerOf);
+    computeTiming(r.path);
+    SIM.time=SIM.total; SIM.playing=false;   // after a parameter change show the whole path
+
+    const time=SIM.total;
+    document.getElementById('s-moves').textContent=g.moves.toLocaleString(LANG==='pl'?'pl-PL':'en-US');
+    document.getElementById('s-len').innerHTML=(g.totalLen/1000).toFixed(2)+' <small>m</small>';
+    document.getElementById('s-e').innerHTML=(P.e_per_mm*g.totalLen).toFixed(1)+' <small>mm</small>';
+    document.getElementById('s-time').textContent=fmtTime(time);
+    document.getElementById('r-total').textContent=fmtTime(time);
+    document.getElementById('d-meta').textContent=T('meta')(g.moves+3,P.layers);
+    document.getElementById('code').innerHTML=highlight(g.text);
+    setPlayLabel();
+  }
+
+  let raf=null;
+  function schedule(){ if(raf)cancelAnimationFrame(raf); raf=requestAnimationFrame(regenerate); }
+
+  // simulation controls
+  document.getElementById('play').addEventListener('click',()=>{
+    if(!SIM.playing){ if(SIM.time>=SIM.total-1e-6) SIM.time=0; SIM.playing=true; }
+    else SIM.playing=false;
+    setPlayLabel();
+  });
+  document.getElementById('reset').addEventListener('click',()=>{SIM.time=0;SIM.playing=false;setPlayLabel();});
+  document.getElementById('speed').addEventListener('change',e=>{SIM.speed=parseFloat(e.target.value);});
+  const scrubEl=document.getElementById('scrub');
+  scrubEl.addEventListener('pointerdown',()=>{scrubbing=true;SIM.playing=false;setPlayLabel();});
+  scrubEl.addEventListener('pointerup',()=>{scrubbing=false;});
+  scrubEl.addEventListener('input',e=>{SIM.time=(parseFloat(e.target.value)/1000)*SIM.total;});
+
+  // export
+  function saveBlob(text,name,mime){
+    const blob=new Blob([text],{type:mime});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  }
+  // DripLab-format export: { "objects": [ [ line ] ] }
+  // The whole path is ONE continuous line -> one object, one line (no needle jumps).
+  function buildJson(){
+    const line=SIM.path.map(p=>[+p[0].toFixed(3), +p[1].toFixed(3), +p[2].toFixed(3)]);
+    return JSON.stringify({ objects:[ [ line ] ] });
+  }
+  document.getElementById('download').addEventListener('click',()=>saveBlob(lastGcode,'lattice.gcode','text/plain'));
+  document.getElementById('json').addEventListener('click',e=>{
+    saveBlob(buildJson(),'lattice_path.json','application/json');
+    const b=e.target; b.textContent=T('saved'); setTimeout(()=>b.textContent=T('b_json'),1400);
+  });
+  document.getElementById('copy').addEventListener('click',async(e)=>{
+    try{await navigator.clipboard.writeText(lastGcode); e.target.textContent=T('copied'); setTimeout(()=>e.target.textContent=T('b_copy'),1400);}
+    catch(_){e.target.textContent=T('copy_err'); setTimeout(()=>e.target.textContent=T('b_copy'),1400);}
+  });
+
+  // ---------- algorithm panel ----------
+  function buildAlgos(){
+    const host=document.getElementById('algos');
+    host.innerHTML='';
+    ALGO_ORDER.forEach(id=>{
+      const on = (id===ALGO);
+      const el=document.createElement('div');
+      el.className='algo'+(on?' on':'');
+      el.setAttribute('data-algo',id);
+      el.innerHTML=
+        '<div class="hd"><span class="dot"></span>'+
+        '<span class="nm">'+id.toUpperCase()+'</span>'+
+        '<span class="badge" data-badge>'+(on?T('algo_active'):T('algo_select'))+'</span></div>'+
+        '<div class="tg">'+T(id+'_tag')+'</div>'+
+        '<div class="ds">'+T(id+'_desc')+'</div>'+
+        (id==='sako'&&on ?
+          '<div class="seg" id="sako-mode">'+
+            '<button data-mode="classic"'+(P.mode==='classic'?' class="on"':'')+'>'+T('mode_classic')+'</button>'+
+            '<button data-mode="rounded"'+(P.mode==='rounded'?' class="on"':'')+'>'+T('mode_rounded')+'</button>'+
+          '</div>'+
+          '<div class="seg-hint">'+T(P.mode==='rounded'?'mode_hint_rounded':'mode_hint_classic')+'</div>'+
+          '<div id="sako-opts" class="opts"'+(P.mode==='rounded'?'':' style="display:none"')+'></div>'
+        : '');
+      el.addEventListener('click',()=>{
+        if(ALGO===id) return;
+        ALGO=id; buildAlgos(); regenerate();
+      });
+      host.appendChild(el);
+      if(id==='sako'&&on){
+        buildControls('sako-opts',CTRL.round,false);
+        el.querySelectorAll('#sako-mode button').forEach(b=>{
+          b.addEventListener('click',ev=>{
+            ev.stopPropagation();                 // don't toggle the card selection
+            const m=b.getAttribute('data-mode');
+            if(P.mode===m) return;
+            P.mode=m; buildAlgos(); regenerate();
+          });
+        });
+      }
+    });
+  }
+
+  // ---------- language switcher ----------
+  function applyLang(){
+    document.title=T('title');
+    document.querySelectorAll('[data-i18n]').forEach(el=>{
+      const k=el.getAttribute('data-i18n'); if(I18N[LANG][k]) el.textContent=I18N[LANG][k];
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(el=>{
+      const k=el.getAttribute('data-i18n-title'); if(I18N[LANG][k]) el.title=I18N[LANG][k];
+    });
+    labelEls.forEach(o=>{ o.el.textContent=T(o.key); });
+    buildAlgos();
+    document.querySelectorAll('#lang button').forEach(b=>{
+      b.classList.toggle('on', b.getAttribute('data-lang')===LANG);
+    });
+    setPlayLabel();
+    const t=SIM.time, pl=SIM.playing;   // don't lose the simulation position on language change
+    regenerate();                        // rebuild G-code with comments in the new language
+    SIM.time=Math.min(t,SIM.total); SIM.playing=pl;
+    setPlayLabel();
+  }
+  document.querySelectorAll('#lang button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const l=b.getAttribute('data-lang');
+      if(l===LANG) return;
+      LANG=l; applyLang();
+    });
+  });
+
+  regenerate();
+  applyLang();
+  requestAnimationFrame(loop);
+})();
+</script>
